@@ -1,1 +1,0 @@
-# Optional Pinecone/RAG helpers

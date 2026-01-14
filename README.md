@@ -1,9 +1,3 @@
-# Smart Voice-Driven Billing & Inventory Manager
+Smart Vendor AI - Fixed bill insertion with ORM
 
-This version includes:
-- Text-to-SQL analytics (audio + text endpoints)
-- SQL views for analytics
-- Alembic migrations scaffold + sample seed script
-- FastAPI backend + Streamlit dashboard
-
-
+Follow usual setup: copy .env, install requirements, create DB, run scripts/seed.py, then uvicorn backend.main:app --reload

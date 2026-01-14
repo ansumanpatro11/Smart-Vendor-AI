@@ -1,35 +1,38 @@
 import os
 from dotenv import load_dotenv
-from langchain_community.utilities import SQLDatabase
-from langchain_openai import ChatOpenAI
-from langchain.chains import create_sql_query_chain
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain.chains import LLMChain
+from langchain.prompts import PromptTemplate
 from sqlalchemy import create_engine, text
 
 load_dotenv()
-DATABASE_URL = os.getenv("DATABASE_URL")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+DATABASE_URL = os.getenv('DATABASE_URL')
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
 
-db = SQLDatabase.from_uri(DATABASE_URL)
-llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-sql_chain = create_sql_query_chain(llm, db)
+llm = ChatGoogleGenerativeAI(model='gemini-2.5-flash', google_api_key=GOOGLE_API_KEY, temperature=0)
 
-SAFE_PREFIXES = ("select", "with")
+PROMPT = """
+You are given DB schema and a user question. Produce a safe SELECT-only SQL query (no mutations).\nSchema:\n{schema}\nQuestion:\n{question}\nRespond with ONLY the SQL query, no markdown formatting or explanations.
+"""
 
-def _is_safe_sql(sql: str) -> bool:
-    if not sql:
-        return False
-    return sql.strip().lower().startswith(SAFE_PREFIXES)
-
-def run_nl_analytics_query(nl_query: str):
+def run_nl_analytics_query(question: str):
     try:
-        generated = sql_chain.invoke({"question": nl_query})
-        sql = (generated or "").strip().strip(';')
-        if not _is_safe_sql(sql):
-            return {"error":"Only SELECT/CTE queries allowed", "sql": sql}
+        schema = "products(product_id, name, price, cost_price, stock_quantity), bills(bill_id, user_id, total_amount, created_at), bill_items(bill_item_id, bill_id, product_id, quantity, price_per_unit, subtotal)"
+        prompt = PromptTemplate(input_variables=['schema','question'], template=PROMPT)
+        chain = LLMChain(llm=llm, prompt=prompt)
+        sql = chain.run({'schema': schema, 'question': question}).strip().rstrip(';')
+        
+        # Remove markdown code blocks if present
+        if sql.startswith('```'):
+            sql = sql.replace('```sql', '').replace('```', '').strip()
+        
+        if not sql or not sql.lower().strip().startswith('select'):
+            return {'error':'Only SELECT queries allowed', 'sql': sql}
+        
         engine = create_engine(DATABASE_URL, future=True)
         with engine.connect() as conn:
             res = conn.execute(text(sql))
             rows = [dict(r._mapping) for r in res]
-        return {"sql": sql, "rows": rows}
+        return {'success': True, 'sql': sql, 'rows': rows, 'count': len(rows)}
     except Exception as e:
-        return {"error": str(e)}
+        return {'error': str(e), 'sql': sql if 'sql' in locals() else None}

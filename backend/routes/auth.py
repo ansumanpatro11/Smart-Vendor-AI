@@ -1,32 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-from backend import models, schemas, db, auth as _auth
-from backend.db import get_db
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.orm import Session
+from backend.db.session import get_db
+from backend.models.models import User
+from backend.services.auth_service import AuthService
+from backend.models.schemas import UserCreate
 
 router = APIRouter()
+service = AuthService()
 
-@router.post("/register", response_model=dict)
-def register(user: schemas.UserCreate, database: Session = Depends(get_db)):
-    existing = database.query(models.User).filter(models.User.email==user.email).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    user_obj = models.User(
-        name=user.name,
-        email=user.email,
-        password_hash=_auth.get_password_hash(user.password),
-        role="vendor"
-    )
-    database.add(user_obj)
-    database.commit()
-    database.refresh(user_obj)
-    token = _auth.create_access_token({"user_id": user_obj.user_id, "email": user_obj.email, "role": user_obj.role})
-    return {"access_token": token, "token_type":"bearer"}
+@router.post('/register')
+def register(user: UserCreate, db: Session = Depends(get_db)):
+    return service.register(user, db)
 
-@router.post("/token", response_model=schemas.Token)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), database: Session = Depends(get_db)):
-    user = database.query(models.User).filter(models.User.email==form_data.username).first()
-    if not user or not _auth.verify_password(form_data.password, user.password_hash):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect credentials")
-    token = _auth.create_access_token({"user_id": user.user_id, "email": user.email, "role": user.role})
-    return {"access_token": token, "token_type":"bearer"}
+@router.post('/token')
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    return service.login(form_data.username, form_data.password, db)

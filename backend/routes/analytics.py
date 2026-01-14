@@ -1,29 +1,37 @@
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Body
-from sqlalchemy.orm import Session
-from backend.db import get_db
-from backend import auth
-from backend.services.whisper_service import transcribe_audio
+from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
+from backend.services.sarvam_service import transcribe_file
 from backend.services.text_to_sql import run_nl_analytics_query
+from backend.db.session import get_db
+from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 router = APIRouter()
 
-@router.post("/speech")
-async def analytics_from_speech(audio: UploadFile = File(...), db: Session = Depends(get_db), token: dict = Depends(auth.get_current_user)):
+@router.post('/speech')
+async def analytics_from_speech(audio: UploadFile = File(...), db: Session = Depends(get_db)):
     import tempfile, shutil
-    with tempfile.NamedTemporaryFile(delete=False, suffix=audio.filename[-4:]) as tmp:
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
         shutil.copyfileobj(audio.file, tmp)
         tmp_path = tmp.name
-    text = transcribe_audio(tmp_path)
-    if not text or not text.strip():
-        raise HTTPException(status_code=400, detail="Could not transcribe speech")
+    textq = transcribe_file(tmp_path)
+    if not textq:
+        raise HTTPException(status_code=400, detail='Could not transcribe')
+    result = run_nl_analytics_query(textq)
+    # Return rows as list for table display instead of full JSON
+    if result.get('success') and result.get('rows'):
+        return result['rows']
+    return result
 
-    result = run_nl_analytics_query(text)
-    return {"query": text, "result": result}
+@router.post('/text')
+def analytics_from_text(query: str = Form(...)):
+    return run_nl_analytics_query(query)
 
-@router.post("/text")
-async def analytics_from_text(payload: dict = Body(...), db: Session = Depends(get_db), token: dict = Depends(auth.get_current_user)):
-    q = payload.get('query')
-    if not q:
-        raise HTTPException(status_code=400, detail="Query missing")
-    result = run_nl_analytics_query(q)
-    return {"query": q, "result": result}
+@router.get('/views/{view_name}')
+def get_view(view_name: str, db: Session = Depends(get_db)):
+    engine = db.get_bind()
+    if view_name not in ('top_selling_products','most_profitable_products','monthly_sales_summary'):
+        raise HTTPException(status_code=404, detail='unknown view')
+    with engine.connect() as conn:
+        res = conn.execute(text(f'SELECT * FROM {view_name}'))
+        rows = [dict(r._mapping) for r in res]
+    return rows
