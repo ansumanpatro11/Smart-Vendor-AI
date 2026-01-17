@@ -7,7 +7,7 @@ from backend.models.models import Product
 from sqlalchemy.orm import Session
 
 # Initialize Pinecone
-pinecone.init(api_key="pcsk_2bERQs_EVgsrsFvTybjwbkVTEsE7MXjmZMeWMSgB7zLjmciBjCtHvM7BLrudUX3uZGYUXY", environment="us-east-1")  # adjust environment
+pinecone.init(api_key="PINECONE_API", environment="us-east-1")  # adjust environment
 index_name = "products"
 if index_name not in pinecone.list_indexes():
     pinecone.create_index(index_name, dimension=384)  # MiniLM-L6-v2 outputs 384 dim
