@@ -1,6 +1,7 @@
 # backend/services/semantic_service.py
 
 # Use community embeddings
+import os
 from langchain_community.embeddings import HuggingFaceEmbeddings
 import pinecone
 from backend.models.models import Product
